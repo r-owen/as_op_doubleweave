@@ -173,7 +173,9 @@ def as_op_doubleweave(
     for name, value in vars(filter).items():
         if name == "skip_treadles":
             if value:
-                new_name_components.append("skip-treadles " + " ".join(value))
+                new_name_components.append(
+                    " ".join(["skip-treadles"] + [str(treadle) for treadle in value])
+                )
         else:
             if value:
                 new_name_components.append(name.replace("_", "-"))
