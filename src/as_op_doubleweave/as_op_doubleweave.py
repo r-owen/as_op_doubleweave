@@ -1,76 +1,49 @@
-__all__ = ["as_op_doubleweave", "Filter"]
+__all__ = ["as_op_doubleweave"]
 
 import copy
-import dataclasses
-from collections.abc import Collection
 
 import dtx_to_wif
 
-
-@dataclasses.dataclass
-class Filter:
-    """Filters for the original pattern."""
-
-    skip_odd_ends: bool = False
-    skip_even_ends: bool = False
-    skip_odd_picks: bool = False
-    skip_even_picks: bool = False
-    skip_treadles: Collection[int] = ()
-
-    def __post_init__(self):
-        if self.skip_even_ends and self.skip_odd_ends:
-            raise ValueError("Cannot skip both even and odd ends")
-        if self.skip_even_picks and self.skip_odd_picks:
-            raise ValueError("Cannot skip both even and odd picks")
-
-
-def sort_and_purge_empty_sets(data: dict[int, set[int]]) -> dict[int, set[int]]:
-    """Sort a dict of int: set[int] and purge items where the set is empty"""
-    return {key: data[key] for key in sorted(data.keys()) if data[key]}
+from .expected_error import ExpectedError
+from .filter_pattern import Filter, filter_pattern
 
 
 def as_op_doubleweave(
-    original: dtx_to_wif.PatternData, filter: Filter
+    in_pattern: dtx_to_wif.PatternData, filter: Filter
 ) -> dtx_to_wif.PatternData:
     """Convert a weaving pattern file to overshot-patterned double weave.
 
     Parameters
     ----------
-    original : dtx_to_wif.PatternData
+    in_pattern : dtx_to_wif.PatternData
         Original pattern. Ends that are not threaded on any shaft
         and picks with no treadle are silently ignored.
-    filter : Filter
-        Filter to apply to the original pattern.
 
     Notes
     -----
-    The filtered pattern must obey the following rules:
+    The pattern must obey the following rules:
 
     * It must contain treadling information (not pure liftplan).
     * It must not use multiple shafts per end.
     * It must not use multiple treadles per pick.
     * It must have the same number of treadles as shafts.
+
+    In addition, the ends and picks should change by a single shaft/treadle
+    each step, else the result will probably have floats that will make
+    the fabric unstable.
     """
-    if len(original.treadling) == 0:
-        raise RuntimeError("Pattern has no treadling info")
+    if len(in_pattern.treadling) == 0:
+        raise ExpectedError("Pattern has no treadling info")
 
-    # Sort threading by end and elide ends that are not threaded
-    filtered_threading = sort_and_purge_empty_sets(original.threading)
-
-    # Apply additional filtering, if requested
-    if filter.skip_odd_ends or filter.skip_even_ends:
-        offset = 1 if filter.skip_odd_ends else 0
-        filtered_threading = {
-            end: shaft_set
-            for end, shaft_set in filtered_threading.items()
-            if (end + offset) % 2 == 0
-        }
+    filtered_original = filter_pattern(in_pattern=in_pattern, filter=filter)
+    filtered_threading = filtered_original.threading
+    filtered_treadling = filtered_original.treadling
 
     max_shafts_per_end = max(
         len(shaft_set) for shaft_set in filtered_threading.values()
     )
     if max_shafts_per_end > 1:
-        raise RuntimeError(
+        raise ExpectedError(
             "some warp yarns are threaded on multiple shafts (even after filtering)"
         )
 
@@ -78,31 +51,12 @@ def as_op_doubleweave(
     # Dict of original shaft: main new shaft
     shaft_dict = {shaft: i + 1 for i, shaft in enumerate(sorted(shaft_set))}
 
-    # Sort treadling by pick and elide picks that are not treadled
-    filtered_treadling = sort_and_purge_empty_sets(original.treadling)
-
-    # Apply additional filtering, if requested
-    if filter.skip_odd_picks or filter.skip_even_picks:
-        offset = 1 if filter.skip_odd_picks else 0
-        filtered_treadling = {
-            pick: treadle_set
-            for pick, treadle_set in filtered_treadling.items()
-            if (pick + offset) % 2 == 0
-        }
-
-    if filter.skip_treadles:
-        skip_treadle_set = set(filter.skip_treadles)
-        filtered_treadling = {
-            pick: (treadle_set - skip_treadle_set)
-            for pick, treadle_set in filtered_treadling.items()
-            if treadle_set - skip_treadle_set
-        }
     treadle_set = set.union(*filtered_treadling.values())
     # Dict of original treadle: main new treadle
     treadle_dict = {treadle: i + 1 for i, treadle in enumerate(sorted(treadle_set))}
 
     if len(shaft_dict) != len(treadle_dict):
-        raise RuntimeError(
+        raise ExpectedError(
             f"num shafts={len(shaft_dict)} "
             f"!= num treadles={len(treadle_dict)} "
             "after filtering"
@@ -112,13 +66,13 @@ def as_op_doubleweave(
         len(treadle_set) for treadle_set in filtered_treadling.values()
     )
     if max_treadles_per_end > 1:
-        raise RuntimeError(
+        raise ExpectedError(
             "some picks use more than one treadle (even after filtering)"
         )
 
-    warp = copy.copy(original.warp)
+    warp = copy.copy(in_pattern.warp)
     warp.threads = 0  # Let PatternData compute it
-    weft = copy.copy(original.weft)
+    weft = copy.copy(in_pattern.weft)
     weft.threads = 0  # Let PatternData compute it
 
     main_color = warp.color
@@ -169,7 +123,7 @@ def as_op_doubleweave(
         treadling[main_pick + 1] = set([opposite_treadle])
         weft_colors[main_pick + 1] = opposite_color
 
-    new_name_components = [original.name, "as op doubleweave"]
+    new_name_components = [in_pattern.name, "as op doubleweave"]
     for name, value in vars(filter).items():
         if name == "skip_treadles":
             if value:
@@ -187,8 +141,8 @@ def as_op_doubleweave(
         tieup=tieup,
         treadling=treadling,
         liftplan=dict(),
-        color_table=original.color_table,
-        color_range=original.color_range,
+        color_table=in_pattern.color_table,
+        color_range=in_pattern.color_range,
         warp=warp,
         weft=weft,
         warp_colors=warp_colors,
