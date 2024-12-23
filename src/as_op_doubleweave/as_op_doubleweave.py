@@ -95,9 +95,11 @@ def as_op_doubleweave(
         main_shaft = shaft_dict[original_shaft]
         opposite_shaft = 1 + ((shafts_delta + main_shaft - 1) % num_shafts)
         threading[main_end] = set([main_shaft])
-        warp_colors[main_end] = main_color
+        if warp.color != main_color:
+            warp_colors[main_end] = main_color
         threading[main_end + 1] = set([opposite_shaft])
-        warp_colors[main_end + 1] = opposite_color
+        if warp.color != opposite_color:
+            warp_colors[main_end + 1] = opposite_color
 
     tieup: dict[int, set[int]] = dict()
     all_shafts_set = set(range(1, 1 + num_shafts))
@@ -119,9 +121,11 @@ def as_op_doubleweave(
         main_treadle = treadle_dict[original_treadle]
         opposite_treadle = main_treadle + num_shafts
         treadling[main_pick] = set([main_treadle])
-        weft_colors[main_pick] = main_color
+        if weft.color != main_color:
+            weft_colors[main_pick] = main_color
         treadling[main_pick + 1] = set([opposite_treadle])
-        weft_colors[main_pick + 1] = opposite_color
+        if weft.color != opposite_color:
+            weft_colors[main_pick + 1] = opposite_color
 
     new_name_components = [in_pattern.name, "as op doubleweave"]
     for name, value in vars(filter).items():

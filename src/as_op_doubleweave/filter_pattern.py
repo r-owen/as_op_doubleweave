@@ -91,6 +91,11 @@ def filter_pattern(
     if filter.skip_even_picks and filter.skip_odd_picks:
         raise ExpectedError("Cannot remove both even and odd picks")
 
+    warp = copy.copy(in_pattern.warp)
+    warp.threads = 0  # Let PatternData compute it
+    weft = copy.copy(in_pattern.weft)
+    weft.threads = 0  # Let PatternData compute it
+
     # Sort threading by end and filter out ends that are not threaded.
     filtered_threading = sort_and_purge_empty_sets(in_pattern.threading)
 
@@ -103,15 +108,15 @@ def filter_pattern(
             if (end + offset) % 2 == 0
         }
 
-    # Compute output threading by re-keying filtered_threading to 1, 2, ...
-    # and compute the associated output warp colors.
-    out_threading = {
+    # Compute output threading and warp_colors with sequential keys
+    # (but warp_colors is sparse).
+    threading = {
         i + 1: shaft_set for i, shaft_set in enumerate(filtered_threading.values())
     }
-    out_warp_colors = {
+    warp_colors = {
         i + 1: in_pattern.warp_colors[pick]
         for i, pick in enumerate(filtered_threading.keys())
-        if pick in in_pattern.warp_colors
+        if pick in in_pattern.warp_colors and in_pattern.warp_colors[pick] != warp.color
     }
 
     # Sort liftplan and treadling by pick,
@@ -143,28 +148,23 @@ def filter_pattern(
             if treadle_set - skip_treadle_set
         }
 
-    # Compute output threading and warp colors,
-    # with sequential keys 1-N, based on the filtered_threading.
-    out_liftplan = {
+    # Compute output liftplan, threading, and weft_colors,
+    # with sequential keys 1-N (but weft_colors is sparse)
+    liftplan = {
         i + 1: shaft_set for i, shaft_set in enumerate(filtered_liftplan.values())
     }
-    out_treadling = {
+    treadling = {
         i + 1: treadle_set for i, treadle_set in enumerate(filtered_treadling.values())
     }
     if in_pattern.treadling:
         filtered_picks = filtered_treadling.keys()
     else:
         filtered_picks = filtered_liftplan.keys()
-    out_weft_colors = {
+    weft_colors = {
         i + 1: in_pattern.weft_colors[pick]
         for i, pick in enumerate(filtered_picks)
-        if pick in in_pattern.weft_colors
+        if pick in in_pattern.weft_colors and in_pattern.weft_colors[pick] != weft.color
     }
-
-    warp = copy.copy(in_pattern.warp)
-    warp.threads = 0  # Let PatternData compute it
-    weft = copy.copy(in_pattern.weft)
-    weft.threads = 0  # Let PatternData compute it
 
     new_name_components = [in_pattern.name]
     for name, value in vars(filter).items():
@@ -180,15 +180,15 @@ def filter_pattern(
 
     return dtx_to_wif.PatternData(
         name=new_name,
-        threading=out_threading,
+        threading=threading,
         tieup=in_pattern.tieup,
-        treadling=out_treadling,
-        liftplan=out_liftplan,
+        treadling=treadling,
+        liftplan=liftplan,
         color_table=in_pattern.color_table,
         color_range=in_pattern.color_range,
         warp=warp,
         weft=weft,
-        warp_colors=out_warp_colors,
-        weft_colors=out_weft_colors,
+        warp_colors=warp_colors,
+        weft_colors=weft_colors,
         source_program="filter_pattern",
     )
